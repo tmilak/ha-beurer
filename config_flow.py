@@ -1,5 +1,5 @@
 import asyncio
-from .triones import discover, TrionesInstance
+from .beurer import discover, BeurerInstance
 from typing import Any
 
 from homeassistant import config_entries
@@ -13,13 +13,13 @@ DATA_SCHEMA = vol.Schema({("host"): str})
 
 MANUAL_MAC = "manual"
 
-class TrionesFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     def __init__(self) -> None:
         self.mac = None
-        self.triones_instance = None
+        self.beurer_instance = None
         self.name = None
 
     async def async_step_user(self, user_input=None):
@@ -97,19 +97,19 @@ class TrionesFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             ), errors={})
 
     async def toggle_light(self):
-        if not self.triones_instance:
-            self.triones_instance = TrionesInstance(self.mac)
+        if not self.beurer_instance:
+            self.beurer_instance = BeurerInstance(self.mac)
         try:
-            await self.triones_instance.update()
-            if self.triones_instance.is_on:
-                await self.triones_instance.turn_off()
+            await self.beurer_instance.update()
+            if self.beurer_instance.is_on:
+                await self.beurer_instance.turn_off()
                 await asyncio.sleep(2)
-                await self.triones_instance.turn_on()
+                await self.beurer_instance.turn_on()
             else:
-                await self.triones_instance.turn_on()
+                await self.beurer_instance.turn_on()
                 await asyncio.sleep(2)
-                await self.triones_instance.turn_off()
+                await self.beurer_instance.turn_off()
         except (Exception) as error:
             return error
         finally:
-            await self.triones_instance.disconnect()
+            await self.beurer_instance.disconnect()

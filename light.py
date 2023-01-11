@@ -2,7 +2,7 @@ import logging
 import voluptuous as vol
 from typing import Any, Optional, Tuple
 
-from .triones import TrionesInstance
+from .beurer import BeurerInstance
 from .const import DOMAIN
 
 from homeassistant.const import CONF_MAC
@@ -18,11 +18,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 
 async def async_setup_entry(hass, config_entry, async_add_devices):
     instance = hass.data[DOMAIN][config_entry.entry_id]
-    async_add_devices([TrionesLight(instance, config_entry.data["name"], config_entry.entry_id)])
+    async_add_devices([BeurerLight(instance, config_entry.data["name"], config_entry.entry_id)])
 
-class TrionesLight(LightEntity):
-    def __init__(self, trionesInstance: TrionesInstance, name: str, entry_id: str) -> None:
-        self._instance = trionesInstance
+class BeurerLight(LightEntity):
+    def __init__(self, beurerInstance: BeurerInstance, name: str, entry_id: str) -> None:
+        self._instance = beurerInstance
         self._entry_id = entry_id
         self._attr_supported_color_modes = {COLOR_MODE_RGB, COLOR_MODE_WHITE}
         self._color_mode = None

@@ -5,13 +5,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_MAC
 
 from .const import DOMAIN
-from .triones import TrionesInstance
+from .beurer import BeurerInstance
 
 PLATFORMS = ["light"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Triones from a config entry."""
-    instance = TrionesInstance(entry.data[CONF_MAC])
+    """Set up Beurer from a config entry."""
+    instance = BeurerInstance(entry.data[CONF_MAC])
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = instance
     hass.config_entries.async_setup_platforms(entry, PLATFORMS)
     return True

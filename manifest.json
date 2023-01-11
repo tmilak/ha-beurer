@@ -1,8 +1,8 @@
 {
-    "domain": "triones",
-    "name": "Triones",
-    "documentation": "https://github.com/sysofwan/ha-triones",
-    "issue_tracker": "https://github.com/sysofwan/ha-triones/issues",
+    "domain": "beurer",
+    "name": "Beurer",
+    "documentation": "https://github.com/sysofwan/ha-beurer",
+    "issue_tracker": "https://github.com/sysofwan/ha-beurer/issues",
     "config_flow": true,
     "dependencies": [],
     "codeowners": [],

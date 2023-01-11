@@ -12,7 +12,7 @@ async def discover():
     """Discover Bluetooth LE devices."""
     devices = await BleakScanner.discover()
     LOGGER.debug("Discovered devices: %s", [{"address": device.address, "name": device.name} for device in devices])
-    return [device for device in devices if device.name.lower().startswith("triones") or device.name.lower().startswith("ledble")]
+    return [device for device in devices if device.name.lower().startswith("TL100")]
 
 def create_status_callback(future: asyncio.Future):
     def callback(sender: int, data: bytearray):
@@ -20,7 +20,7 @@ def create_status_callback(future: asyncio.Future):
             future.set_result(data)
     return callback
 
-class TrionesInstance:
+class BeurerInstance:
     def __init__(self, mac: str) -> None:
         self._mac = mac
         self._device = BleakClient(self._mac)
@@ -41,7 +41,7 @@ class TrionesInstance:
     @property
     def is_on(self):
         return self._is_on
-    
+
     @property
     def rgb_color(self):
         return self._rgb_color
@@ -53,16 +53,16 @@ class TrionesInstance:
     async def set_color(self, rgb: Tuple[int, int, int]):
         r, g, b = rgb
         await self._write([0x56, r, g, b, 0x00, 0xF0, 0xAA])
-    
+
     async def set_white(self, intensity: int):
         await self._write([0x56, 0, 0, 0, intensity, 0x0F, 0xAA])
 
     async def turn_on(self):
         await self._write(bytearray([0xCC, 0x23, 0x33]))
-        
+
     async def turn_off(self):
         await self._write(bytearray([0xCC, 0x24, 0x33]))
-    
+
     async def update(self):
         try:
             if not self._device.is_connected:
@@ -86,10 +86,10 @@ class TrionesInstance:
             future = asyncio.get_event_loop().create_future()
             await self._device.start_notify(self._read_uuid, create_status_callback(future))
             await self._write(bytearray([0xEF, 0x01, 0x77]))
-            
+
             await asyncio.wait_for(future, 5.0)
             await self._device.stop_notify(self._read_uuid)
-            
+
             res = future.result()
             self._is_on = True if res[2] == 0x23 else False if res[2] == 0x24 else None
             self._rgb_color = (res[6], res[7], res[8])

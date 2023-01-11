@@ -6,14 +6,14 @@
                     "mac": "Bluetooth MAC address",
                     "name": "Name"
                 },
-                "title": "Pick a Triones light. Make sure light in sight for validation."
+                "title": "Pick a Beurer light. Make sure light in sight for validation."
             },
             "validate": {
                 "data": {
                     "retry": "Retry validate connection?",
                     "flicker": "Did the light blink?"
                 },
-                "title": "Validate Triones connection"
+                "title": "Validate Beurer connection"
             },
             "manual": {
                 "data": {
@@ -24,12 +24,12 @@
             }
         },
         "error": {
-            "connect": "Unable to connect to Triones"
+            "connect": "Unable to connect to Beurer"
         },
         "abort": {
-            "cannot_validate": "Unable to validate Triones light",
-            "cannot_connect": "Unable to connect to Triones"
+            "cannot_validate": "Unable to validate Beurer light",
+            "cannot_connect": "Unable to connect to Beurer"
         }
     },
-    "title": "Triones"
+    "title": "Beurer"
 }
