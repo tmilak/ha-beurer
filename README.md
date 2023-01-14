@@ -3,9 +3,9 @@
 ![Hassfest](https://github.com/deadolus/ha-beurer/actions/workflows/hassfest.yaml/badge.svg)
 ![HACS](https://github.com/deadolus/ha-beurer/actions/workflows/hacs.yml/badge.svg)
 
-Home Assistant integration for BLE based Beurer or HappyLighting lights.
+Home Assistant integration for BLE based Beurer TL100/wellbeing/Daylight therapy lamp
 
-Supports controlling BLE based lights controllable through the Beurer or HappyLighting apps.
+Supports controlling BLE based lights controllable through the Beurer LightUp app.
 
 ## Installation
 
@@ -20,7 +20,7 @@ You can manually clone this repository inside `config/custom_components/beurer`.
 For  example, from Terminal plugin:
 ```
 cd /config/custom_components
-git clone https://github.com/sysofwan/ha-beurer beurer
+git clone https://github.com/deadolus/ha-beurer beurer
 ```
 
 ## Setup
@@ -33,9 +33,7 @@ The setup needs to be repeated for each light.
 ## Features
 1. Discovery: Automatically discover Beurer based lights without manually hunting for Bluetooth MAC address
 2. On/Off/RGB/Brightness support
-3. Live state polling: External control (i.e. IR remote) state changes will reflect in Home Assistant
-4. Emulated RGB brightness: Supports adjusting brightness of RGB lights
-5. Multiple light support
+3. Multiple light support
 
 ## Not supported
 [Light modes](https://github.com/madhead/saberlight/blob/master/protocols/Beurer/protocol.md#built-in-modes) (blinking, fading, etc) is not yet supported.
@@ -57,4 +55,4 @@ logger:
 ```
 
 ## Credits
-This integration will not be possible without the awesome work of reverse engineering and documenting the Beurer BLE protocol [here](https://github.com/madhead/saberlight/blob/master/protocols/Beurer/protocol.md).
+This integration will is a fork of [sysofwan ha-triones integration](https://github.com/sysofwan/ha-triones), whose framework I used for this Beurer integration
