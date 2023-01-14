@@ -56,7 +56,7 @@ class BeurerLight(LightEntity):
 
     @property
     def effect(self):
-        return None
+        return self._instance.effect
 
     @property
     def effect_list(self):

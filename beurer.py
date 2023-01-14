@@ -82,6 +82,10 @@ class BeurerInstance:
         return self._brightness
 
     @property
+    def effect(self):
+        return self._effect
+
+    @property
     def color_mode(self):
         return self._mode
 
@@ -117,9 +121,11 @@ class BeurerInstance:
         LOGGER.debug(f"Setting to color: %s, %s, %s - brightness %s", r, g, b, brightness)
         self._mode = COLOR_MODE_RGB
         self._rgb_color = (r,g,b)
-        await self.turn_on()
+        if not self._color_on:
+            await self.turn_on()
         #Send color
         await self.sendPacket([0x32,r,g,b])
+        await asyncio.sleep(0.2)
         #send _brightness
         await self.sendPacket([0x31,0x02,int(brightness/255*100)])
 
@@ -127,15 +133,18 @@ class BeurerInstance:
         LOGGER.debug(f"Setting white to intensity: %s", intensity)
         self._brightness = intensity
         self._mode = COLOR_MODE_WHITE
-        await self.turn_on()
+        if not self._light_on:
+            await self.turn_on()
         await self.sendPacket([0x31,0x01,int(intensity/255*100)])
+        await asyncio.sleep(0.2)
+        self.set_effect("Off")
 
     async def set_effect(self, effect: str):
         LOGGER.debug(f"Setting effect {effect}")
         self._mode = COLOR_MODE_RGB
-        await self.turn_on()
+        if not self._color_on:
+            await self.turn_on()
         await self.sendPacket([0x34,self.find_effect_position(effect)])
-
 
     async def turn_on(self):
         LOGGER.debug("Turning on")
@@ -145,6 +154,7 @@ class BeurerInstance:
         #COLOR mode
         else:
             await self.sendPacket([0x37,0x02])
+        await asyncio.sleep(0.2)
 
     async def turn_off(self):
         LOGGER.debug("Turning off")
@@ -160,6 +170,8 @@ class BeurerInstance:
         await self.sendPacket([0x30,0x02])
         LOGGER.info(f"Triggered update")
 
+    #We receive status version 1 then version 2.
+    # So changes to the light status shall only be done in version 2 handler
     async def notification_handler(self, characteristic: BleakGATTCharacteristic, res: bytearray):
         """Simple notification handler which prints the data received."""
         #LOGGER.info("Received notification %s: %r", characteristic.description, res)
@@ -174,8 +186,8 @@ class BeurerInstance:
             self._light_on = True if res[9] == 1 else False
             if res[9] == 1:
                 self._mode = COLOR_MODE_WHITE
-            self._is_on = self._light_on or self._color_on
-            LOGGER.debug(f"res: {res[9]}, light_on {self._light_on}, color_on {self._color_on}")
+            #self._is_on = self._light_on or self._color_on
+            #LOGGER.debug(f"res: {res[9]}, light_on {self._light_on}, color_on {self._color_on}")
             LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
         #Long version with color information
         elif reply_version == 2:
@@ -184,8 +196,9 @@ class BeurerInstance:
                     self._mode = COLOR_MODE_RGB
                 self._color_brightness = int(res[10]*255/100) if res[10] > 0 else None
                 self._rgb_color = (res[13], res[14], res[15])
+                self._effect = self._supported_effects[res[16]]
                 self._is_on = self._light_on or self._color_on
-                LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}")
+                LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}, effect: {self._effect}")
             #Unknown reply
         elif reply_version == 255:
                 self._is_on = False
@@ -209,7 +222,7 @@ class BeurerInstance:
         try:
             if not self._device.is_connected:
                 await self._device.connect(timeout=20)
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
 
                 for char in self._device.services.characteristics.values():
                     if char.uuid in WRITE_CHARACTERISTIC_UUIDS:
@@ -223,13 +236,13 @@ class BeurerInstance:
 
                 LOGGER.info(f"Read UUID: {self._read_uuid}, Write UUID: {self._write_uuid}")
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(0.1)
             LOGGER.info(f"Starting notifications")
 
             await self._device.start_notify(self._read_uuid, self.notification_handler)
 
             await self.triggerStatus()
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
         except (Exception) as error:
             self._is_on = None
             self._light_on = False
@@ -247,7 +260,7 @@ class BeurerInstance:
             LOGGER.info(f"Triggering update")
 
             await self.triggerStatus()
-            await asyncio.sleep(1)
+            #await asyncio.sleep(0.1)
 
         except (Exception) as error:
             self._is_on = None
