@@ -56,11 +56,7 @@ class BeurerLight(LightEntity):
 
     @property
     def color_mode(self):
-        if self._instance.rgb_color:
-            if self._instance.rgb_color == (0, 0, 0):
-                return COLOR_MODE_WHITE
-            return COLOR_MODE_RGB
-        return None
+        return self._instance.color_mode
 
     @property
     def device_info(self):

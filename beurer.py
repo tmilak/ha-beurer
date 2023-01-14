@@ -3,6 +3,8 @@ from bleak import BleakClient, BleakScanner, BLEDevice
 import traceback
 import asyncio
 
+from homeassistant.components.light import (COLOR_MODE_RGB, COLOR_MODE_WHITE)
+
 from .const import LOGGER
 
 WRITE_CHARACTERISTIC_UUIDS = ["8b00ace7-eb0b-49b0-bbe9-9aee0a26e1a3"]
@@ -38,6 +40,7 @@ class BeurerInstance:
         self._color_brightness = None
         self._write_uuid = None
         self._read_uuid = None
+        self._mode = None
 
     async def _write(self, data: bytearray):
         LOGGER.debug("Sending in write: " + ''.join(format(x, ' 03x') for x in data))
@@ -63,6 +66,10 @@ class BeurerInstance:
     def white_brightness(self):
         return self._brightness
 
+    @property
+    def color_mode(self):
+        return self._mode
+
 
     def makeChecksum(self, b: int, bArr: list[int]) -> int:
         for b2 in bArr:
@@ -71,6 +78,8 @@ class BeurerInstance:
 
     async def sendPacket(self, message: list[int]):
           #LOGGER.debug(f"Sending packet with length {message.length}: {message}")
+        if not self._device.is_connected:
+            self.update()
         length=len(message)
         checksum = self.makeChecksum(length+2,message) #Plus two bytes
         packet=[0xFE,0xEF,0x0A,length+7,0xAB,0xAA,length+2]+message+[checksum,0x55,0x0D,0x0A]
@@ -80,6 +89,7 @@ class BeurerInstance:
     async def set_color(self, rgb: Tuple[int, int, int], brightness: int):
         r, g, b = rgb
         LOGGER.debug(f"Setting to color: %s, %s, %s - brightness %s", r, g, b, brightness)
+        self._mode = COLOR_MODE_RGB
         self._rgb_color = (r,g,b)
         await self.turn_on()
         #Send color
@@ -90,14 +100,14 @@ class BeurerInstance:
     async def set_white(self, intensity: int):
         LOGGER.debug(f"Setting white to intensity: %s", intensity)
         self._brightness = intensity
-        self._rgb_color = (0,0,0)
+        self._mode = COLOR_MODE_WHITE
         await self.turn_on()
         await self.sendPacket([0x31,0x01,int(intensity/255*100)])
 
     async def turn_on(self):
         LOGGER.debug("Turning on")
         #WHITE mode
-        if self._rgb_color == (0,0,0):
+        if self._mode == COLOR_MODE_WHITE:
             await self.sendPacket([0x37,0x01])
         #COLOR mode
         else:
@@ -112,7 +122,7 @@ class BeurerInstance:
 
     async def triggerStatus(self):
         #Trigger notification with current values
-        if self._rgb_color == (0,0,0):
+        if self._mode == COLOR_MODE_WHITE:
             await self.sendPacket([0x30,0x01])
         else:
             await self.sendPacket([0x30,0x02])
@@ -168,30 +178,28 @@ class BeurerInstance:
             if reply_version == 1:
                 self._is_on = True if res[9] == 1 else False
                 self._brightness = int(res[10]*255/100) if res[10] > 0 else None
-                self._color_brightness = None
-                self._rgb_color = (0,0,0)
+                self._mode = COLOR_MODE_WHITE
                 LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
             #Long version with color information
             else:
                 if reply_version == 2:
                     self._is_on = True if res[9] == 1 else False
                     self._color_brightness = int(res[10]*255/100) if res[10] > 0 else None
-                    self._brightness = None
+                    self._mode = COLOR_MODE_RGB
                     self._rgb_color = (res[13], res[14], res[15])
                     LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}")
                 #Unknown reply
                 else:
                     if reply_version == 255:
                         self._is_on = False
-                        self._brightness = 0
-                        self._color_brightness = 0
-                        self._rgb_color = (0,0,0)
+                        self._mode = None
                         LOGGER.debug(f"Unkown version 255")
                     else:
                         self._is_on = None
                         self._rgb_color = None
                         self._brightness = None
                         self._color_brightness = None
+                        self._mode = None
             LOGGER.debug("Received notification: " + ''.join(format(x, ' 03x') for x in res))
 
         except (Exception) as error:
