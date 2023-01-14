@@ -1,5 +1,5 @@
 from typing import Tuple
-from bleak import BleakClient, BleakScanner
+from bleak import BleakClient, BleakScanner, BLEDevice
 import traceback
 import asyncio
 
@@ -20,13 +20,22 @@ def create_status_callback(future: asyncio.Future):
             future.set_result(data)
     return callback
 
+async def get_device(mac: str) -> BLEDevice:
+    devices = await BleakScanner.discover()
+    LOGGER.debug(f"Discovered devices: {devices}")
+    return [device for device in devices if device.mac.lower()==mac.lower()]
+
 class BeurerInstance:
-    def __init__(self, mac: str) -> None:
-        self._mac = mac
-        self._device = BleakClient(self._mac)
+    def __init__(self, device: BLEDevice) -> None:
+        self._mac = device.address
+        #device = get_device(self._mac)
+        if device == None:
+            LOGGER.error(f"Was not able to find device with mac {self._mac}")
+        self._device = BleakClient(device)
         self._is_on = None
         self._rgb_color = None
         self._brightness = None
+        self._color_brightness = None
         self._write_uuid = None
         self._read_uuid = None
 
@@ -47,8 +56,13 @@ class BeurerInstance:
         return self._rgb_color
 
     @property
+    def color_brightness(self):
+        return self._color_brightness
+
+    @property
     def white_brightness(self):
         return self._brightness
+
 
     def makeChecksum(self, b: int, bArr: list[int]) -> int:
         for b2 in bArr:
@@ -63,21 +77,22 @@ class BeurerInstance:
         print("Sending message"+''.join(format(x, ' 03x') for x in packet))
         await self._write(packet)
 
-    async def set_color(self, rgb: Tuple[int, int, int]):
+    async def set_color(self, rgb: Tuple[int, int, int], brightness: int):
         r, g, b = rgb
-        LOGGER.debug(f"Setting to color: %s, %s, %s", r, g, b)
+        LOGGER.debug(f"Setting to color: %s, %s, %s - brightness %s", r, g, b, brightness)
         self._rgb_color = (r,g,b)
         await self.turn_on()
         #Send color
         await self.sendPacket([0x32,r,g,b])
         #send _brightness
-        await self.sendPacket([0x31,0x02,int(self._brightness/255*100)])
+        await self.sendPacket([0x31,0x02,int(brightness/255*100)])
 
     async def set_white(self, intensity: int):
-        LOGGER.debug(f"Setting white to intensity: %s", int(intensity/255*100))
-        await self.sendPacket([0x31,0x01,int(intensity/255*100)])
+        LOGGER.debug(f"Setting white to intensity: %s", intensity)
+        self._brightness = intensity
         self._rgb_color = (0,0,0)
         await self.turn_on()
+        await self.sendPacket([0x31,0x01,int(intensity/255*100)])
 
     async def turn_on(self):
         LOGGER.debug("Turning on")
@@ -134,14 +149,17 @@ class BeurerInstance:
             except (Exception) as error:
                 try:
                     LOGGER.info(f"No luck getting status, trying again...")
+                    future = asyncio.get_event_loop().create_future()
                     await self.triggerStatus()
                     await asyncio.wait_for(future, 5.0)
                 except (Exception) as error:
                     LOGGER.info("Have lost the device somehow")
                     await self._device.stop_notify(self._read_uuid)
                     await self.disconnect()
+                    return
 
-            await self._device.stop_notify(self._read_uuid)
+            if self._device.is_connected:
+                await self._device.stop_notify(self._read_uuid)
 
             res = future.result()
             reply_version = res[8]
@@ -150,26 +168,30 @@ class BeurerInstance:
             if reply_version == 1:
                 self._is_on = True if res[9] == 1 else False
                 self._brightness = int(res[10]*255/100) if res[10] > 0 else None
+                self._color_brightness = None
                 self._rgb_color = (0,0,0)
                 LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
             #Long version with color information
             else:
                 if reply_version == 2:
                     self._is_on = True if res[9] == 1 else False
-                    self._brightness = int(res[10]*255/100) if res[10] > 0 else None
+                    self._color_brightness = int(res[10]*255/100) if res[10] > 0 else None
+                    self._brightness = None
                     self._rgb_color = (res[13], res[14], res[15])
-                    LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._brightness}, rgb color: {self._rgb_color}")
+                    LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}")
                 #Unknown reply
                 else:
                     if reply_version == 255:
                         self._is_on = False
                         self._brightness = 0
+                        self._color_brightness = 0
                         self._rgb_color = (0,0,0)
                         LOGGER.debug(f"Unkown version 255")
                     else:
                         self._is_on = None
                         self._rgb_color = None
                         self._brightness = None
+                        self._color_brightness = None
             LOGGER.debug("Received notification: " + ''.join(format(x, ' 03x') for x in res))
 
         except (Exception) as error:
@@ -177,6 +199,10 @@ class BeurerInstance:
             track = traceback.format_exc()
             LOGGER.debug(track)
             LOGGER.error(f"Error getting status: {error}")
+        #finally:
+            #if self._device.is_connected:
+            #    LOGGER.debug(f"Stop notifications in finally")
+            #    await self._device.stop_notify(self._read_uuid)
 
     async def disconnect(self):
         LOGGER.debug("Disconnecting")
