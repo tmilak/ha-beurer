@@ -5,8 +5,8 @@ import asyncio
 
 from .const import LOGGER
 
-WRITE_CHARACTERISTIC_UUIDS = ["0000ffd5-0000-1000-8000-00805f9b34fb", "0000ffd9-0000-1000-8000-00805f9b34fb", "0000ffe5-0000-1000-8000-00805f9b34fb", "0000ffe9-0000-1000-8000-00805f9b34fb"]
-READ_CHARACTERISTIC_UUIDS  = ["0000ffd0-0000-1000-8000-00805f9b34fb", "0000ffd4-0000-1000-8000-00805f9b34fb", "0000ffe0-0000-1000-8000-00805f9b34fb", "0000ffe4-0000-1000-8000-00805f9b34fb"]
+WRITE_CHARACTERISTIC_UUIDS = ["8b00ace7-eb0b-49b0-bbe9-9aee0a26e1a3"]
+READ_CHARACTERISTIC_UUIDS  = ["0734594A-A8E7-4B1A-A6B1-CD5243059A57"]
 
 async def discover():
     """Discover Bluetooth LE devices."""
@@ -50,18 +50,27 @@ class BeurerInstance:
     def white_brightness(self):
         return self._brightness
 
+    def makeChecksum(b: int, bArr: List[int]) -> int:
+      for b2 in bArr:
+          b = b ^ b2
+      return b
+
     async def set_color(self, rgb: Tuple[int, int, int]):
         r, g, b = rgb
-        await self._write([0x56, r, g, b, 0x00, 0xF0, 0xAA])
+        checksum = makeChecksum(6,[0x32,r,g,b])
+        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x06,0x32,r,g,b,checksum,0x55,0x0D,0x0A])
 
     async def set_white(self, intensity: int):
-        await self._write([0x56, 0, 0, 0, intensity, 0x0F, 0xAA])
+        checksum = makeChecksum(5,[0x31,0x01,intensity])
+        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x05,0x31,0x01,intensity,checksum,0x55,0x0D,0x0A])
 
     async def turn_on(self):
-        await self._write(bytearray([0xCC, 0x23, 0x33]))
+        checksum = makeChecksum(4,[0x37,0x01])
+        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x04,0x37,0x01,checksum,0x55,0x0D,0x0A])
 
     async def turn_off(self):
-        await self._write(bytearray([0xCC, 0x24, 0x33]))
+        checksum = makeChecksum(4,[0x35,0x01])
+        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x04,0x35,0x01,checksum,0x55,0x0D,0x0A])
 
     async def update(self):
         try:
@@ -85,15 +94,30 @@ class BeurerInstance:
 
             future = asyncio.get_event_loop().create_future()
             await self._device.start_notify(self._read_uuid, create_status_callback(future))
-            await self._write(bytearray([0xEF, 0x01, 0x77]))
+
+            #Trigger notification with current values
+            await self._write(bytearray([0xFE,0xEF,0x0A,0x09,0xAB,0xAA,0x04,0x30,0x02,0x36,0x55,0x0D,0x0A]))
 
             await asyncio.wait_for(future, 5.0)
             await self._device.stop_notify(self._read_uuid)
 
             res = future.result()
-            self._is_on = True if res[2] == 0x23 else False if res[2] == 0x24 else None
-            self._rgb_color = (res[6], res[7], res[8])
-            self._brightness = res[9] if res[9] > 0 else None
+            reply_version = res[9]
+            #Short version with only _brightness
+            if reply_version == 1:
+                self._is_on = True if res[10] == 1 else None
+                self._brightness = res[11] if res[11] > 0 else None
+                self._rgb_color = None
+            #Long version with color information
+            else if reply_version == 2:
+                self._is_on = True if res[10] == 1 else None
+                self._brightness = res[11] if res[11] > 0 else None
+                self._rgb_color = (res[14], res[15], res[16])
+            #Unknown reply
+            else
+                self._is_on = None
+                self._rgb_color = None
+                self._brightness = None
             LOGGER.debug(''.join(format(x, ' 03x') for x in res))
 
         except (Exception) as error:
