@@ -12,5 +12,5 @@ jobs:
     steps:
       - uses: "actions/checkout@v2"
         with:
-          path: triones
+          path: beurer
       - uses: home-assistant/actions/hassfest@master
