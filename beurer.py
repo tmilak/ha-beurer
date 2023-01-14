@@ -6,13 +6,13 @@ import asyncio
 from .const import LOGGER
 
 WRITE_CHARACTERISTIC_UUIDS = ["8b00ace7-eb0b-49b0-bbe9-9aee0a26e1a3"]
-READ_CHARACTERISTIC_UUIDS  = ["0734594A-A8E7-4B1A-A6B1-CD5243059A57"]
+READ_CHARACTERISTIC_UUIDS  = ["0734594a-a8e7-4b1a-a6b1-cd5243059a57"]
 
 async def discover():
     """Discover Bluetooth LE devices."""
     devices = await BleakScanner.discover()
     LOGGER.debug("Discovered devices: %s", [{"address": device.address, "name": device.name} for device in devices])
-    return [device for device in devices if device.name.lower().startswith("TL100")]
+    return [device for device in devices if device.name.lower().startswith("tl100")]
 
 def create_status_callback(future: asyncio.Future):
     def callback(sender: int, data: bytearray):
@@ -31,7 +31,7 @@ class BeurerInstance:
         self._read_uuid = None
 
     async def _write(self, data: bytearray):
-        LOGGER.debug(''.join(format(x, ' 03x') for x in data))
+        LOGGER.debug("Sending in write: " + ''.join(format(x, ' 03x') for x in data))
         await self._device.write_gatt_char(self._write_uuid, data)
 
     @property
@@ -50,28 +50,58 @@ class BeurerInstance:
     def white_brightness(self):
         return self._brightness
 
-    def makeChecksum(b: int, bArr: list[int]) -> int:
+    def makeChecksum(self, b: int, bArr: list[int]) -> int:
         for b2 in bArr:
             b = b ^ b2
         return b
 
+    async def sendPacket(self, message: list[int]):
+          #LOGGER.debug(f"Sending packet with length {message.length}: {message}")
+        length=len(message)
+        checksum = self.makeChecksum(length+2,message) #Plus two bytes
+        packet=[0xFE,0xEF,0x0A,length+7,0xAB,0xAA,length+2]+message+[checksum,0x55,0x0D,0x0A]
+        print("Sending message"+''.join(format(x, ' 03x') for x in packet))
+        await self._write(packet)
 
     async def set_color(self, rgb: Tuple[int, int, int]):
         r, g, b = rgb
-        checksum = makeChecksum(6,[0x32,r,g,b])
-        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x06,0x32,r,g,b,checksum,0x55,0x0D,0x0A])
+        LOGGER.debug(f"Setting to color: %s, %s, %s", r, g, b)
+        self._rgb_color = (r,g,b)
+        await self.turn_on()
+        #Send color
+        await self.sendPacket([0x32,r,g,b])
+        #send _brightness
+        await self.sendPacket([0x31,0x02,int(self._brightness/255*100)])
 
     async def set_white(self, intensity: int):
-        checksum = makeChecksum(5,[0x31,0x01,intensity])
-        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x05,0x31,0x01,intensity,checksum,0x55,0x0D,0x0A])
+        LOGGER.debug(f"Setting white to intensity: %s", int(intensity/255*100))
+        await self.sendPacket([0x31,0x01,int(intensity/255*100)])
+        self._rgb_color = (0,0,0)
+        await self.turn_on()
 
     async def turn_on(self):
-        checksum = makeChecksum(4,[0x37,0x01])
-        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x04,0x37,0x01,checksum,0x55,0x0D,0x0A])
+        LOGGER.debug("Turning on")
+        #WHITE mode
+        if self._rgb_color == (0,0,0):
+            await self.sendPacket([0x37,0x01])
+        #COLOR mode
+        else:
+            await self.sendPacket([0x37,0x02])
 
     async def turn_off(self):
-        checksum = makeChecksum(4,[0x35,0x01])
-        await self._write([0xFE,0xEF,0x0A,0x0B,0xAB,0xAA,0x04,0x35,0x01,checksum,0x55,0x0D,0x0A])
+        LOGGER.debug("Turning off")
+        #turn off white
+        await self.sendPacket([0x35,0x01])
+        #turn off color
+        await self.sendPacket([0x35,0x02])
+
+    async def triggerStatus(self):
+        #Trigger notification with current values
+        if self._rgb_color == (0,0,0):
+            await self.sendPacket([0x30,0x01])
+        else:
+            await self.sendPacket([0x30,0x02])
+        LOGGER.info(f"Triggered update")
 
     async def update(self):
         try:
@@ -91,43 +121,64 @@ class BeurerInstance:
 
                 LOGGER.info(f"Read UUID: {self._read_uuid}, Write UUID: {self._write_uuid}")
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
+            LOGGER.info(f"Triggering update")
 
             future = asyncio.get_event_loop().create_future()
             await self._device.start_notify(self._read_uuid, create_status_callback(future))
 
-            #Trigger notification with current values
-            await self._write(bytearray([0xFE,0xEF,0x0A,0x09,0xAB,0xAA,0x04,0x30,0x02,0x36,0x55,0x0D,0x0A]))
+            await self.triggerStatus()
 
-            await asyncio.wait_for(future, 5.0)
+            try:
+                await asyncio.wait_for(future, 5.0)
+            except (Exception) as error:
+                try:
+                    LOGGER.info(f"No luck getting status, trying again...")
+                    await self.triggerStatus()
+                    await asyncio.wait_for(future, 5.0)
+                except (Exception) as error:
+                    LOGGER.info("Have lost the device somehow")
+                    await self._device.stop_notify(self._read_uuid)
+                    await self.disconnect()
+
             await self._device.stop_notify(self._read_uuid)
 
             res = future.result()
-            reply_version = res[9]
+            reply_version = res[8]
+            LOGGER.debug(f"Reply version is {reply_version}")
             #Short version with only _brightness
             if reply_version == 1:
-                self._is_on = True if res[10] == 1 else None
-                self._brightness = res[11] if res[11] > 0 else None
-                self._rgb_color = None
+                self._is_on = True if res[9] == 1 else False
+                self._brightness = int(res[10]*255/100) if res[10] > 0 else None
+                self._rgb_color = (0,0,0)
+                LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
             #Long version with color information
             else:
                 if reply_version == 2:
-                    self._is_on = True if res[10] == 1 else None
-                    self._brightness = res[11] if res[11] > 0 else None
-                    self._rgb_color = (res[14], res[15], res[16])
+                    self._is_on = True if res[9] == 1 else False
+                    self._brightness = int(res[10]*255/100) if res[10] > 0 else None
+                    self._rgb_color = (res[13], res[14], res[15])
+                    LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._brightness}, rgb color: {self._rgb_color}")
                 #Unknown reply
                 else:
-                    self._is_on = None
-                    self._rgb_color = None
-                    self._brightness = None
-            LOGGER.debug(''.join(format(x, ' 03x') for x in res))
+                    if reply_version == 255:
+                        self._is_on = False
+                        self._brightness = 0
+                        self._rgb_color = (0,0,0)
+                        LOGGER.debug(f"Unkown version 255")
+                    else:
+                        self._is_on = None
+                        self._rgb_color = None
+                        self._brightness = None
+            LOGGER.debug("Received notification: " + ''.join(format(x, ' 03x') for x in res))
 
         except (Exception) as error:
             self._is_on = None
-            LOGGER.error("Error getting status: %s", error)
             track = traceback.format_exc()
             LOGGER.debug(track)
+            LOGGER.error(f"Error getting status: {error}")
 
     async def disconnect(self):
+        LOGGER.debug("Disconnecting")
         if self._device.is_connected:
             await self._device.disconnect()

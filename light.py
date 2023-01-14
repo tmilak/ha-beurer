@@ -37,10 +37,10 @@ class BeurerLight(LightEntity):
     def brightness(self):
         if self._instance.white_brightness:
             return self._instance.white_brightness
-        
+
         if self._instance._rgb_color:
             return max(self._instance.rgb_color)
-        
+
         return None
 
     @property
@@ -94,7 +94,7 @@ class BeurerLight(LightEntity):
                 else:
                     color = self._transform_color_brightness(color, self.brightness)
                 await self._instance.set_color(color)
-        
+
         elif ATTR_BRIGHTNESS in kwargs and kwargs[ATTR_BRIGHTNESS] != self.brightness and self.rgb_color != None:
             await self._instance.set_color(self._transform_color_brightness(self.rgb_color, kwargs[ATTR_BRIGHTNESS]))
 

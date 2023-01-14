@@ -27,7 +27,7 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if user_input["mac"] == MANUAL_MAC:
                 return await self.async_step_manual()
-            
+
             self.mac = user_input["mac"]
             self.name = user_input["name"]
             await self.async_set_unique_id(format_mac(self.mac))
@@ -39,7 +39,7 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if not devices:
             return await self.async_step_manual()
-        
+
         return self.async_show_form(
             step_id="user", data_schema=vol.Schema(
                 {
@@ -60,7 +60,7 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 if user_input["flicker"]:
                     return self.async_create_entry(title=self.name, data={CONF_MAC: self.mac, "name": self.name})
                 return self.async_abort(reason="cannot_validate")
-            
+
             if "retry" in user_input and not user_input["retry"]:
                 return self.async_abort(reason="cannot_connect")
 
@@ -73,7 +73,7 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Required("retry"): bool
                     }
                 ), errors={"base": "connect"})
-        
+
         return self.async_show_form(
             step_id="validate", data_schema=vol.Schema(
                 {
@@ -82,7 +82,7 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             ), errors={})
 
     async def async_step_manual(self, user_input: "dict[str, Any] | None" = None):
-        if user_input is not None:            
+        if user_input is not None:
             self.mac = user_input["mac"]
             self.name = user_input["name"]
             await self.async_set_unique_id(format_mac(self.mac))
@@ -100,7 +100,9 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if not self.beurer_instance:
             self.beurer_instance = BeurerInstance(self.mac)
         try:
+            LOGGER.debug("Going to update from config flow")
             await self.beurer_instance.update()
+            LOGGER.debug(f"Finished updating from config flow, light is {self.beurer_instance.is_on}")
             if self.beurer_instance.is_on:
                 await self.beurer_instance.turn_off()
                 await asyncio.sleep(2)
@@ -110,6 +112,7 @@ class BeurerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 await asyncio.sleep(2)
                 await self.beurer_instance.turn_off()
         except (Exception) as error:
+            LOGGER.error(f"Error while toggling light: {error}")
             return error
         finally:
             await self.beurer_instance.disconnect()
