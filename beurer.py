@@ -1,5 +1,5 @@
 from typing import Tuple
-from bleak import BleakClient, BleakScanner, BLEDevice
+from bleak import BleakClient, BleakScanner, BLEDevice, BleakGATTCharacteristic, BleakError
 import traceback
 import asyncio
 
@@ -35,6 +35,8 @@ class BeurerInstance:
             LOGGER.error(f"Was not able to find device with mac {self._mac}")
         self._device = BleakClient(device)
         self._is_on = None
+        self._light_on = None
+        self._color_on = None
         self._rgb_color = None
         self._brightness = None
         self._color_brightness = None
@@ -43,10 +45,21 @@ class BeurerInstance:
         self._read_uuid = None
         self._mode = None
         self._supported_effects = ["Off", "Random", "Rainbow", "Rainbow Slow", "Fusion", "Pulse", "Wave", "Chill", "Action", "Forest", "Summer"]
+        self.connect()
 
     async def _write(self, data: bytearray):
         LOGGER.debug("Sending in write: " + ''.join(format(x, ' 03x') for x in data))
-        await self._device.write_gatt_char(self._write_uuid, data)
+        if not self._device.is_connected:
+            await self._device.connect(timeout=20)
+        try:
+            await self._device.write_gatt_char(self._write_uuid, data)
+        except (BleakError) as error:
+            self._is_on = None
+            self._light_on = None
+            self._color_on = None
+            track = traceback.format_exc()
+            LOGGER.debug(track)
+            LOGGER.warn(f"Error while trying to write to device: {error}")
 
     @property
     def mac(self):
@@ -92,7 +105,7 @@ class BeurerInstance:
     async def sendPacket(self, message: list[int]):
           #LOGGER.debug(f"Sending packet with length {message.length}: {message}")
         if not self._device.is_connected:
-            self.update()
+            self.connect()
         length=len(message)
         checksum = self.makeChecksum(length+2,message) #Plus two bytes
         packet=[0xFE,0xEF,0x0A,length+7,0xAB,0xAA,length+2]+message+[checksum,0x55,0x0D,0x0A]
@@ -142,13 +155,57 @@ class BeurerInstance:
 
     async def triggerStatus(self):
         #Trigger notification with current values
-        if self._mode == COLOR_MODE_WHITE:
-            await self.sendPacket([0x30,0x01])
-        else:
-            await self.sendPacket([0x30,0x02])
+        await self.sendPacket([0x30,0x01])
+        await asyncio.sleep(0.2)
+        await self.sendPacket([0x30,0x02])
         LOGGER.info(f"Triggered update")
 
-    async def update(self):
+    async def notification_handler(self, characteristic: BleakGATTCharacteristic, res: bytearray):
+        """Simple notification handler which prints the data received."""
+        #LOGGER.info("Received notification %s: %r", characteristic.description, res)
+        LOGGER.debug("Received notification: " + ''.join(format(x, ' 03x') for x in res))
+        if len(res) < 9:
+            return
+        reply_version = res[8]
+        LOGGER.debug(f"Reply version is {reply_version}")
+        #Short version with only _brightness
+        if reply_version == 1:
+            self._brightness = int(res[10]*255/100) if res[10] > 0 else None
+            self._light_on = True if res[9] == 1 else False
+            if res[9] == 1:
+                self._mode = COLOR_MODE_WHITE
+            self._is_on = self._light_on or self._color_on
+            LOGGER.debug(f"res: {res[9]}, light_on {self._light_on}, color_on {self._color_on}")
+            LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
+        #Long version with color information
+        elif reply_version == 2:
+                self._color_on = True if res[9] == 1 else False
+                if res[9] == 1:
+                    self._mode = COLOR_MODE_RGB
+                self._color_brightness = int(res[10]*255/100) if res[10] > 0 else None
+                self._rgb_color = (res[13], res[14], res[15])
+                self._is_on = self._light_on or self._color_on
+                LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}")
+            #Unknown reply
+        elif reply_version == 255:
+                self._is_on = False
+                self._light_on = False
+                self._color_on = False
+                self._mode = None
+                LOGGER.debug(f"Unkown version 255")
+        elif reply_version == 0:
+            LOGGER.debug(f"Unkown version 0")
+            return
+        else:
+            LOGGER.debug(f"Received unknown notification")
+            return
+            #self._is_on = None
+            #self._rgb_color = None
+            #self._brightness = None
+            #self._color_brightness = None
+            #self._mode = None
+
+    async def connect(self):
         try:
             if not self._device.is_connected:
                 await self._device.connect(timeout=20)
@@ -167,70 +224,36 @@ class BeurerInstance:
                 LOGGER.info(f"Read UUID: {self._read_uuid}, Write UUID: {self._write_uuid}")
 
             await asyncio.sleep(2)
-            LOGGER.info(f"Triggering update")
+            LOGGER.info(f"Starting notifications")
 
-            future = asyncio.get_event_loop().create_future()
-            await self._device.start_notify(self._read_uuid, create_status_callback(future))
+            await self._device.start_notify(self._read_uuid, self.notification_handler)
 
             await self.triggerStatus()
+            await asyncio.sleep(1)
+        except (Exception) as error:
+            self._is_on = None
+            self._light_on = False
+            self._color_on = False
+            track = traceback.format_exc()
+            LOGGER.debug(track)
+            LOGGER.error(f"Error connecting: {error}")
 
-            try:
-                await asyncio.wait_for(future, 5.0)
-            except (Exception) as error:
-                try:
-                    LOGGER.info(f"No luck getting status, trying again...")
-                    future = asyncio.get_event_loop().create_future()
-                    await self.triggerStatus()
-                    await asyncio.wait_for(future, 5.0)
-                except (Exception) as error:
-                    LOGGER.info("Have lost the device somehow")
-                    await self._device.stop_notify(self._read_uuid)
-                    await self.disconnect()
-                    return
+    async def update(self):
+        try:
+            if not self._device.is_connected:
+                await self.connect()
+            await self._device.start_notify(self._read_uuid, self.notification_handler)
 
-            if self._device.is_connected:
-                await self._device.stop_notify(self._read_uuid)
+            LOGGER.info(f"Triggering update")
 
-            res = future.result()
-            reply_version = res[8]
-            LOGGER.debug(f"Reply version is {reply_version}")
-            #Short version with only _brightness
-            if reply_version == 1:
-                self._is_on = True if res[9] == 1 else False
-                self._brightness = int(res[10]*255/100) if res[10] > 0 else None
-                self._mode = COLOR_MODE_WHITE
-                LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
-            #Long version with color information
-            else:
-                if reply_version == 2:
-                    self._is_on = True if res[9] == 1 else False
-                    self._color_brightness = int(res[10]*255/100) if res[10] > 0 else None
-                    self._mode = COLOR_MODE_RGB
-                    self._rgb_color = (res[13], res[14], res[15])
-                    LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}")
-                #Unknown reply
-                else:
-                    if reply_version == 255:
-                        self._is_on = False
-                        self._mode = None
-                        LOGGER.debug(f"Unkown version 255")
-                    else:
-                        self._is_on = None
-                        self._rgb_color = None
-                        self._brightness = None
-                        self._color_brightness = None
-                        self._mode = None
-            LOGGER.debug("Received notification: " + ''.join(format(x, ' 03x') for x in res))
+            await self.triggerStatus()
+            await asyncio.sleep(1)
 
         except (Exception) as error:
             self._is_on = None
             track = traceback.format_exc()
             LOGGER.debug(track)
             LOGGER.error(f"Error getting status: {error}")
-        #finally:
-            #if self._device.is_connected:
-            #    LOGGER.debug(f"Stop notifications in finally")
-            #    await self._device.stop_notify(self._read_uuid)
 
     async def disconnect(self):
         LOGGER.debug("Disconnecting")
