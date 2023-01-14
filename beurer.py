@@ -109,15 +109,16 @@ class BeurerInstance:
                 self._brightness = res[11] if res[11] > 0 else None
                 self._rgb_color = None
             #Long version with color information
-            else if reply_version == 2:
-                self._is_on = True if res[10] == 1 else None
-                self._brightness = res[11] if res[11] > 0 else None
-                self._rgb_color = (res[14], res[15], res[16])
-            #Unknown reply
-            else
-                self._is_on = None
-                self._rgb_color = None
-                self._brightness = None
+            else:
+                if reply_version == 2:
+                    self._is_on = True if res[10] == 1 else None
+                    self._brightness = res[11] if res[11] > 0 else None
+                    self._rgb_color = (res[14], res[15], res[16])
+                #Unknown reply
+                else:
+                    self._is_on = None
+                    self._rgb_color = None
+                    self._brightness = None
             LOGGER.debug(''.join(format(x, ' 03x') for x in res))
 
         except (Exception) as error:
