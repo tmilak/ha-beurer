@@ -1,7 +1,7 @@
 # ha-beurer
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/sysofwan/ha-beurer)
-![Hassfest](https://github.com/sysofwan/ha-beurer/actions/workflows/hassfest.yaml/badge.svg)
-![HACS](https://github.com/sysofwan/ha-beurer/actions/workflows/hacs.yml/badge.svg)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/deadolus/ha-beurer)
+![Hassfest](https://github.com/deadolus/ha-beurer/actions/workflows/hassfest.yaml/badge.svg)
+![HACS](https://github.com/deadolus/ha-beurer/actions/workflows/hacs.yml/badge.svg)
 
 Home Assistant integration for BLE based Beurer or HappyLighting lights.
 
