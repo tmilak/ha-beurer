@@ -7,14 +7,9 @@ from homeassistant.const import CONF_MAC
 from bleak import BleakScanner, BLEDevice
 
 from .const import DOMAIN, LOGGER
-from .beurer import BeurerInstance
+from .beurer import BeurerInstance, get_device
 
 PLATFORMS = ["light"]
-
-async def get_device(mac: str) -> BLEDevice:
-    devices = await BleakScanner.discover()
-    LOGGER.debug(f"Discovered devices: {devices}")
-    return next((device for device in devices if device.address.lower()==mac.lower()),None)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Beurer from a config entry."""

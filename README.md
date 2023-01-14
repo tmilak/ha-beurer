@@ -34,9 +34,7 @@ The setup needs to be repeated for each light.
 1. Discovery: Automatically discover Beurer based lights without manually hunting for Bluetooth MAC address
 2. On/Off/RGB/Brightness support
 3. Multiple light support
-
-## Not supported
-[Light modes](https://github.com/madhead/saberlight/blob/master/protocols/Beurer/protocol.md#built-in-modes) (blinking, fading, etc) is not yet supported.
+4. Light modes (Rainbow, Pulse, Forest, ..) as found in the app
 
 ## Known issues
 1. Light connection may fail a few times after Home Assistant reboot. The integration will usually reconnect and the issue will resolve itself.

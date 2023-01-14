@@ -25,7 +25,7 @@ def create_status_callback(future: asyncio.Future):
 async def get_device(mac: str) -> BLEDevice:
     devices = await BleakScanner.discover()
     LOGGER.debug(f"Discovered devices: {devices}")
-    return [device for device in devices if device.mac.lower()==mac.lower()]
+    return next((device for device in devices if device.address.lower()==mac.lower()),None)
 
 class BeurerInstance:
     def __init__(self, device: BLEDevice) -> None:
@@ -38,9 +38,11 @@ class BeurerInstance:
         self._rgb_color = None
         self._brightness = None
         self._color_brightness = None
+        self._effect = None
         self._write_uuid = None
         self._read_uuid = None
         self._mode = None
+        self._supported_effects = ["Off", "Random", "Rainbow", "Rainbow Slow", "Fusion", "Pulse", "Wave", "Chill", "Action", "Forest", "Summer"]
 
     async def _write(self, data: bytearray):
         LOGGER.debug("Sending in write: " + ''.join(format(x, ' 03x') for x in data))
@@ -69,6 +71,17 @@ class BeurerInstance:
     @property
     def color_mode(self):
         return self._mode
+
+    @property
+    def supported_effects(self):
+        return self._supported_effects
+
+    def find_effect_position(self, effect) -> int:
+        try:
+            return self._supported_effects.index(effect)
+        except ValueError:
+            return None
+
 
 
     def makeChecksum(self, b: int, bArr: list[int]) -> int:
@@ -103,6 +116,13 @@ class BeurerInstance:
         self._mode = COLOR_MODE_WHITE
         await self.turn_on()
         await self.sendPacket([0x31,0x01,int(intensity/255*100)])
+
+    async def set_effect(self, effect: str):
+        LOGGER.debug(f"Setting effect {effect}")
+        self._mode = COLOR_MODE_RGB
+        await self.turn_on()
+        await self.sendPacket([0x34,self.find_effect_position(effect)])
+
 
     async def turn_on(self):
         LOGGER.debug("Turning on")
@@ -146,7 +166,7 @@ class BeurerInstance:
 
                 LOGGER.info(f"Read UUID: {self._read_uuid}, Write UUID: {self._write_uuid}")
 
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
             LOGGER.info(f"Triggering update")
 
             future = asyncio.get_event_loop().create_future()

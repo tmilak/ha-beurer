@@ -8,9 +8,10 @@ from .const import DOMAIN
 from homeassistant.const import CONF_MAC
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.light import (COLOR_MODE_RGB, PLATFORM_SCHEMA,
-                                            LightEntity, ATTR_RGB_COLOR, ATTR_BRIGHTNESS, COLOR_MODE_WHITE, ATTR_WHITE)
+                                            LightEntity, ATTR_RGB_COLOR, ATTR_BRIGHTNESS, ATTR_EFFECT, COLOR_MODE_WHITE, ATTR_WHITE, LightEntityFeature)
 from homeassistant.util.color import (match_max_scale)
 from homeassistant.helpers import device_registry
+from .const import LOGGER
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_MAC): cv.string
@@ -35,10 +36,9 @@ class BeurerLight(LightEntity):
 
     @property
     def brightness(self):
-        if self._instance.white_brightness:
+        if self._instance.color_mode == COLOR_MODE_WHITE:
             return self._instance.white_brightness
-
-        if self._instance._rgb_color:
+        else:
             return self._instance.color_brightness
 
         return None
@@ -53,6 +53,18 @@ class BeurerLight(LightEntity):
         if self._instance.rgb_color:
             return match_max_scale((255,), self._instance.rgb_color)
         return None
+
+    @property
+    def effect(self):
+        return None
+
+    @property
+    def effect_list(self):
+        return self._instance.supported_effects
+
+    @property
+    def supported_features(self):
+        return LightEntityFeature.EFFECT
 
     @property
     def color_mode(self):
@@ -75,6 +87,7 @@ class BeurerLight(LightEntity):
         return res
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        LOGGER.debug(f"Turning light on with args: {kwargs}")
         if not self.is_on:
             await self._instance.turn_on()
 
@@ -95,6 +108,9 @@ class BeurerLight(LightEntity):
         elif ATTR_BRIGHTNESS in kwargs and kwargs[ATTR_BRIGHTNESS] != self.brightness and self.rgb_color != None:
             #await self._instance.set_color(self._transform_color_brightness(self.rgb_color, kwargs[ATTR_BRIGHTNESS]))
             await self._instance.set_color(self.rgb_color, kwargs[ATTR_BRIGHTNESS])
+
+        if ATTR_EFFECT in kwargs:
+            await self._instance.set_effect(kwargs[ATTR_EFFECT])
 
 
     async def async_turn_off(self, **kwargs: Any) -> None:
