@@ -38,7 +38,12 @@ The setup needs to be repeated for each light.
 
 ## Known issues
 1. Light connection may fail a few times after Home Assistant reboot. The integration will usually reconnect and the issue will resolve itself.
-2. After toggling lights, Home Assistant may not reflect state changes for up to 30 seconds. This is due to a lag in Beurer status API.
+2. The rightmost LED, which signals Bluetooth connection, on the lamp will always be on.
+   This is because HomeAssistant will always be connected to the lamp, use black duct tape if you want the lamp to be completely dark.
+
+## Not supported
+Timers for automatic turn off of the lamp are currently not supported. 
+Use HomeAssistant automations if you need this functionality.
 
 ## Debugging
 Add the following to `configuration.yml` to show debugging logs. Please make sure to include debug logs when filing an issue.
