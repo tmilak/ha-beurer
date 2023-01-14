@@ -50,10 +50,11 @@ class BeurerInstance:
     def white_brightness(self):
         return self._brightness
 
-    def makeChecksum(b: int, bArr: List[int]) -> int:
-      for b2 in bArr:
-          b = b ^ b2
-      return b
+    def makeChecksum(b: int, bArr: list[int]) -> int:
+        for b2 in bArr:
+            b = b ^ b2
+        return b
+
 
     async def set_color(self, rgb: Tuple[int, int, int]):
         r, g, b = rgb
