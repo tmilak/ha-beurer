@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Callable
 from bleak import BleakClient, BleakScanner, BLEDevice, BleakGATTCharacteristic, BleakError
 import traceback
 import asyncio
@@ -34,10 +34,11 @@ class BeurerInstance:
         if device == None:
             LOGGER.error(f"Was not able to find device with mac {self._mac}")
         self._device = BleakClient(device)
+        self._trigger_update = None
         self._is_on = None
         self._light_on = None
         self._color_on = None
-        self._rgb_color = None
+        self._rgb_color = (0,0,0)
         self._brightness = None
         self._color_brightness = None
         self._effect = None
@@ -46,6 +47,10 @@ class BeurerInstance:
         self._mode = None
         self._supported_effects = ["Off", "Random", "Rainbow", "Rainbow Slow", "Fusion", "Pulse", "Wave", "Chill", "Action", "Forest", "Summer"]
         self.connect()
+
+    def set_update_callback(self, trigger_update: Callable):
+        LOGGER.debug(f"Setting update callback to {trigger_update}")
+        self._trigger_update = trigger_update
 
     async def _write(self, data: bytearray):
         LOGGER.debug("Sending in write: " + ''.join(format(x, ' 03x') for x in data))
@@ -115,28 +120,38 @@ class BeurerInstance:
         print("Sending message"+''.join(format(x, ' 03x') for x in packet))
         await self._write(packet)
 
-    async def set_color(self, rgb: Tuple[int, int, int], brightness: int):
+    async def set_color(self, rgb: Tuple[int, int, int]):
         r, g, b = rgb
-        LOGGER.debug(f"Setting to color: %s, %s, %s - brightness %s", r, g, b, brightness)
+        LOGGER.debug(f"Setting to color: %s, %s, %s", r, g, b)
         self._mode = COLOR_MODE_RGB
         self._rgb_color = (r,g,b)
         if not self._color_on:
             await self.turn_on()
         #Send color
         await self.sendPacket([0x32,r,g,b])
-        await asyncio.sleep(0.2)
-        #send _brightness
+        await asyncio.sleep(0.1)
+        await self.triggerStatus()
+
+    async def set_color_brightness(self, brightness: int):
+        LOGGER.debug(f"Setting to brightness {brightness}")
+        self._mode = COLOR_MODE_RGB
+        if not self._color_on:
+            await self.turn_on()
+        #Send brightness
         await self.sendPacket([0x31,0x02,int(brightness/255*100)])
+        await asyncio.sleep(0.1)
+        await self.triggerStatus()
 
     async def set_white(self, intensity: int):
         LOGGER.debug(f"Setting white to intensity: %s", intensity)
-        self._brightness = intensity
+        #self._brightness = intensity
         self._mode = COLOR_MODE_WHITE
         if not self._light_on:
             await self.turn_on()
         await self.sendPacket([0x31,0x01,int(intensity/255*100)])
         await asyncio.sleep(0.2)
         self.set_effect("Off")
+        await self.triggerStatus()
 
     async def set_effect(self, effect: str):
         LOGGER.debug(f"Setting effect {effect}")
@@ -144,9 +159,12 @@ class BeurerInstance:
         if not self._color_on:
             await self.turn_on()
         await self.sendPacket([0x34,self.find_effect_position(effect)])
+        await self.triggerStatus()
 
     async def turn_on(self):
         LOGGER.debug("Turning on")
+        if not self._device.is_connected:
+            await self.connect()
         #WHITE mode
         if self._mode == COLOR_MODE_WHITE:
             await self.sendPacket([0x37,0x01])
@@ -161,8 +179,10 @@ class BeurerInstance:
                 await asyncio.sleep(0.2)
                 await self.set_effect(self._effect)
                 await asyncio.sleep(0.2)
-                await self.set_color(self._rgb_color, self._color_brightness)
+                await self.set_color(self._rgb_color)
+                await self.set_color_brightness(self._color_brightness)
         await asyncio.sleep(0.2)
+        await self.triggerStatus()
 
     async def turn_off(self):
         LOGGER.debug("Turning off")
@@ -170,6 +190,8 @@ class BeurerInstance:
         await self.sendPacket([0x35,0x01])
         #turn off color
         await self.sendPacket([0x35,0x02])
+        await asyncio.sleep(0.1)
+        await self.triggerStatus()
 
     async def triggerStatus(self):
         #Trigger notification with current values
@@ -177,6 +199,13 @@ class BeurerInstance:
         await asyncio.sleep(0.2)
         await self.sendPacket([0x30,0x02])
         LOGGER.info(f"Triggered update")
+
+    async def trigger_entity_update(self):
+        if self._trigger_update:
+            LOGGER.debug(f"Triggering async update")
+            self._trigger_update()
+        else:
+            LOGGER.warn(f"No async update function provided: {self._trigger_update}")
 
     #We receive status version 1 then version 2.
     # So changes to the light status shall only be done in version 2 handler
@@ -195,7 +224,6 @@ class BeurerInstance:
                 self._brightness = int(res[10]*255/100) if res[10] > 0 else None
                 self._mode = COLOR_MODE_WHITE
             #self._is_on = self._light_on or self._color_on
-            #LOGGER.debug(f"res: {res[9]}, light_on {self._light_on}, color_on {self._color_on}")
             LOGGER.debug(f"Short version, on: {self._is_on}, brightness: {self._brightness}")
         #Long version with color information
         elif reply_version == 2:
@@ -208,15 +236,22 @@ class BeurerInstance:
                 self._rgb_color = (res[13], res[14], res[15])
                 self._is_on = self._light_on or self._color_on
                 LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}, effect: {self._effect}")
-            #Unknown reply
+                LOGGER.debug(f"res: {res[9]}, light_on {self._light_on}, color_on {self._color_on}")
+                await self.trigger_entity_update()
+        #Device turned off
         elif reply_version == 255:
                 self._is_on = False
                 self._light_on = False
                 self._color_on = False
                 self._mode = None
-                LOGGER.debug(f"Unkown version 255")
+                LOGGER.debug(f"Device off")
+                await self.trigger_entity_update()
+        #Device is going to shutdown
         elif reply_version == 0:
-            LOGGER.debug(f"Unkown version 0")
+            LOGGER.debug(f"Device is going to shut down")
+            self._is_on = False
+            self._light_on = False
+            self._color_on = False
             return
         else:
             LOGGER.debug(f"Received unknown notification")

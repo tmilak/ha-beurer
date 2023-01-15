@@ -31,9 +31,24 @@ class BeurerLight(LightEntity):
         self._attr_name = name
         self._attr_unique_id = self._instance.mac
 
+    async def async_added_to_hass(self) -> None:
+        """Add update callback after being added to hass."""
+        self._instance.set_update_callback(self.update_callback)
+        await self._instance.update()
+
+    def update_callback(self) -> None:
+        """Schedule a state update."""
+        #self.async_schedule_update_ha_state(False)
+        self.schedule_update_ha_state(False)
+
     @property
     def available(self):
         return self._instance.is_on != None
+
+    #We handle update triggers manually, do not poll
+    @property
+    def should_poll(self) -> Optional[bool]:
+        return False
 
     @property
     def brightness(self):
@@ -41,7 +56,6 @@ class BeurerLight(LightEntity):
             return self._instance.white_brightness
         else:
             return self._instance.color_brightness
-
         return None
 
     @property
@@ -57,7 +71,10 @@ class BeurerLight(LightEntity):
 
     @property
     def effect(self):
-        return self._instance.effect
+        if self._instance.color_mode == COLOR_MODE_WHITE:
+            return "Off"
+        else:
+            return self._instance.effect
 
     @property
     def effect_list(self):
@@ -89,26 +106,18 @@ class BeurerLight(LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         LOGGER.debug(f"Turning light on with args: {kwargs}")
-        if not self.is_on:
-            await self._instance.turn_on()
+        #if not self.is_on:
+        #    await self._instance.turn_on()
 
         if ATTR_WHITE in kwargs:
-            if kwargs[ATTR_WHITE] != self.brightness:
-                await self._instance.set_white(kwargs[ATTR_WHITE])
+            await self._instance.set_white(kwargs[ATTR_WHITE])
 
-        elif ATTR_RGB_COLOR in kwargs:
-            if kwargs[ATTR_RGB_COLOR] != self.rgb_color:
-                color = kwargs[ATTR_RGB_COLOR]
-                if ATTR_BRIGHTNESS in kwargs:
-                    await self._instance.set_color(color, kwargs[ATTR_BRIGHTNESS])
-                #    color = self._transform_color_brightness(color, kwargs[ATTR_BRIGHTNESS])
-                else:
-                #    color = self._transform_color_brightness(color, self.brightness)
-                    await self._instance.set_color(color, self.brightness)
+        if ATTR_RGB_COLOR in kwargs:
+            color = kwargs[ATTR_RGB_COLOR]
+            await self._instance.set_color(color)
 
-        elif ATTR_BRIGHTNESS in kwargs and kwargs[ATTR_BRIGHTNESS] != self.brightness and self.rgb_color != None:
-            #await self._instance.set_color(self._transform_color_brightness(self.rgb_color, kwargs[ATTR_BRIGHTNESS]))
-            await self._instance.set_color(self.rgb_color, kwargs[ATTR_BRIGHTNESS])
+        if ATTR_BRIGHTNESS in kwargs:
+            await self._instance.set_color_brightness(kwargs[ATTR_BRIGHTNESS])
 
         if ATTR_EFFECT in kwargs:
             await self._instance.set_effect(kwargs[ATTR_EFFECT])
