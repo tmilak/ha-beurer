@@ -13,6 +13,7 @@ PLATFORMS = ["light"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Beurer from a config entry."""
+    LOGGER.debug(f"Setting up device from __init__")
     device = await get_device(entry.data[CONF_MAC])
     if device == None:
         LOGGER.error(f"Was not able to find device with mac {entry.data[CONF_MAC]}")

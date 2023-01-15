@@ -18,6 +18,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 async def async_setup_entry(hass, config_entry, async_add_devices):
+    LOGGER.debug(f"Setting up device from light")
     instance = hass.data[DOMAIN][config_entry.entry_id]
     async_add_devices([BeurerLight(instance, config_entry.data["name"], config_entry.entry_id)])
 

@@ -97,9 +97,8 @@ class BeurerInstance:
         try:
             return self._supported_effects.index(effect)
         except ValueError:
-            return None
-
-
+            #return Off if not found
+            return 0
 
     def makeChecksum(self, b: int, bArr: list[int]) -> int:
         for b2 in bArr:
@@ -154,6 +153,15 @@ class BeurerInstance:
         #COLOR mode
         else:
             await self.sendPacket([0x37,0x02])
+            LOGGER.debug(f"Current color state: {self._color_on}, {self._rgb_color}, {self._color_brightness}, {self._effect}")
+            #Lamp wants to turn on on rainbow mode when enabling mood light, so send last status
+            if not self._color_on:
+                LOGGER.debug(f"Restoring last known color state")
+                self._color_on = True
+                await asyncio.sleep(0.2)
+                await self.set_effect(self._effect)
+                await asyncio.sleep(0.2)
+                await self.set_color(self._rgb_color, self._color_brightness)
         await asyncio.sleep(0.2)
 
     async def turn_off(self):
@@ -182,9 +190,9 @@ class BeurerInstance:
         LOGGER.debug(f"Reply version is {reply_version}")
         #Short version with only _brightness
         if reply_version == 1:
-            self._brightness = int(res[10]*255/100) if res[10] > 0 else None
             self._light_on = True if res[9] == 1 else False
             if res[9] == 1:
+                self._brightness = int(res[10]*255/100) if res[10] > 0 else None
                 self._mode = COLOR_MODE_WHITE
             #self._is_on = self._light_on or self._color_on
             #LOGGER.debug(f"res: {res[9]}, light_on {self._light_on}, color_on {self._color_on}")
@@ -194,9 +202,10 @@ class BeurerInstance:
                 self._color_on = True if res[9] == 1 else False
                 if res[9] == 1:
                     self._mode = COLOR_MODE_RGB
+                    #effect will be turned off if light off, update only if light on
+                    self._effect = self._supported_effects[res[16]]
                 self._color_brightness = int(res[10]*255/100) if res[10] > 0 else None
                 self._rgb_color = (res[13], res[14], res[15])
-                self._effect = self._supported_effects[res[16]]
                 self._is_on = self._light_on or self._color_on
                 LOGGER.debug(f"Long version, on: {self._is_on}, brightness: {self._color_brightness}, rgb color: {self._rgb_color}, effect: {self._effect}")
             #Unknown reply
