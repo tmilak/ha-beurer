@@ -108,6 +108,8 @@ class BeurerLight(LightEntity):
         LOGGER.debug(f"Turning light on with args: {kwargs}")
         #if not self.is_on:
         #    await self._instance.turn_on()
+        if len(kwargs) == 0:
+            await self._instance.turn_on()
 
         if ATTR_WHITE in kwargs:
             await self._instance.set_white(kwargs[ATTR_WHITE])
