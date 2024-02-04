@@ -95,8 +95,7 @@ class BeurerLight(LightEntity):
                 (DOMAIN, self._instance.mac)
             },
             "name": self.name,
-            "connections": {(device_registry.CONNECTION_NETWORK_MAC, self._instance.mac)},
-            "config_entry_id": self._entry_id
+            "connections": {(device_registry.CONNECTION_NETWORK_MAC, self._instance.mac)}
         }
 
     def _transform_color_brightness(self, color: Tuple[int, int, int], set_brightness: int):
@@ -111,18 +110,15 @@ class BeurerLight(LightEntity):
         if len(kwargs) == 0:
             await self._instance.turn_on()
 
-        if ATTR_WHITE in kwargs:
-            await self._instance.set_white(kwargs[ATTR_WHITE])
+        if ATTR_BRIGHTNESS in kwargs and kwargs[ATTR_BRIGHTNESS]:
+            await self._instance.set_white(kwargs[ATTR_BRIGHTNESS])
 
-        if ATTR_RGB_COLOR in kwargs:
+        if ATTR_RGB_COLOR in kwargs and kwargs[ATTR_RGB_COLOR]:
             color = kwargs[ATTR_RGB_COLOR]
             await self._instance.set_color(color)
 
-        if ATTR_BRIGHTNESS in kwargs:
-            await self._instance.set_color_brightness(kwargs[ATTR_BRIGHTNESS])
-
-        if ATTR_EFFECT in kwargs:
-            await self._instance.set_effect(kwargs[ATTR_EFFECT])
+        if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT]:
+           await self._instance.set_effect(kwargs[ATTR_EFFECT])
 
 
     async def async_turn_off(self, **kwargs: Any) -> None:
